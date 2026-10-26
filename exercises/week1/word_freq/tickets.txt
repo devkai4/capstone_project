@@ -1,0 +1,20 @@
+Prediction requests to the deployment are failing with a timeout error.
+The customer says the model was working yesterday but the deployment now returns 500.
+Batch prediction job stuck in the queue for more than two hours.
+Unable to register the model in the registry because of a permission error.
+The deployment shows high latency after the model was replaced.
+Customer reports that the prediction server is not responding.
+Login to the console fails with an authentication error for SSO users.
+The training job failed with an out of memory error on the large dataset.
+Data drift alert triggered on the deployment but the data looks normal.
+The customer wants to know why the model accuracy dropped this week.
+Feature impact chart does not load in the Workbench UI.
+Prediction API returns 401 even though the API key is valid.
+The batch prediction output file is missing several rows.
+Deployment health status changed to failing after the model replacement.
+Customer asks how to roll back the deployment to the previous model.
+Notebook kernel keeps restarting when importing the custom library.
+The scheduled job did not run at the expected time.
+Model package export fails with an unknown error in the registry.
+Service health on the deployment shows a spike in error rate.
+The customer needs a workaround for the prediction timeout before Friday.
