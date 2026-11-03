@@ -15,6 +15,8 @@ FIXTURE = Path(__file__).parent / "fixtures" / "tickets.jsonl"
         ("", ""),
         ("  hello   world \n", "hello world"),
         ("Dear Team,\n\nThe VPN\tis down.", "Dear Team, The VPN is down."),
+        ("Dear Team,\\n\\nThe VPN is down.", "Dear Team, The VPN is down."),  # literal "\n" as in the HF data
+        ("line one\\r\\nline two", "line one line two"),
         ("ＡＢＣ　１２３", "ABC 123"),                  # full-width -> half-width (NFKC)
         ("pass​word", "password"),                # zero-width space removed
         ("non breaking", "non breaking"),         # NBSP -> space

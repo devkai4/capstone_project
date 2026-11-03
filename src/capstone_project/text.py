@@ -8,6 +8,8 @@ import unicodedata
 from capstone_project.records import Ticket
 
 _WHITESPACE = re.compile(r"\s+")
+# The HF dataset stores line breaks as the two characters "\" + "n", not as real newlines.
+_ESCAPED_NEWLINE = re.compile(r"\\r\\n|\\n|\\r")
 _WORD = re.compile(r"[a-z0-9]+(?:['-][a-z0-9]+)*")
 
 
@@ -15,13 +17,16 @@ def clean_text(text: str | None, *, lower: bool = False) -> str:
     """Normalize one piece of text.
 
     1. None / "" -> ""
-    2. Unicode NFKC (full-width "ＡＢＣ１" -> "ABC1", non-breaking space -> space)
-    3. Drop invisible format chars (zero-width space etc.), turn control chars into spaces
-    4. Collapse every run of whitespace (incl. newlines) into one space, strip the ends
-    5. Optionally lowercase
+    2. Literal escaped line breaks ("\\n", "\\r\\n" as text) -> space
+       (trade-off: a Windows path like C:\\new would also be split)
+    3. Unicode NFKC (full-width "ＡＢＣ１" -> "ABC1", non-breaking space -> space)
+    4. Drop invisible format chars (zero-width space etc.), turn control chars into spaces
+    5. Collapse every run of whitespace (incl. newlines) into one space, strip the ends
+    6. Optionally lowercase
     """
     if not text:
         return ""
+    text = _ESCAPED_NEWLINE.sub(" ", text)
     text = unicodedata.normalize("NFKC", text)
     chars = []
     for ch in text:

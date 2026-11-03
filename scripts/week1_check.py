@@ -46,9 +46,11 @@ def main() -> int:
         preview = text.replace("\n\n", " | ")[:100]
         print(f"  [{ticket.queue} / {ticket.priority}] {preview}...")
 
-    ok = len(tickets) == args.n and all(texts)
+    leftover = sum(text.count("\\n") for text in texts)  # escaped line breaks that survived cleaning
+    ok = len(tickets) == args.n and all(texts) and leftover == 0 and clean_chars < raw_chars
     print(f"\n{'PASS' if ok else 'FAIL'}: {len(tickets)}/{args.n} records loaded, "
-          f"{sum(bool(text) for text in texts)}/{len(texts)} with non-empty cleaned text")
+          f"{sum(bool(text) for text in texts)}/{len(texts)} with non-empty cleaned text, "
+          f"{leftover} literal \\n left, text shrank {raw_chars} -> {clean_chars}")
     return 0 if ok else 1
 
 
