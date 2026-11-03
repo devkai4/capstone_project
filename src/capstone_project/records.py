@@ -1,19 +1,23 @@
-"""Load support-ticket records from a JSON Lines file.
+"""Load support-ticket records (JSONL or CSV) into Ticket dataclasses, and save them as JSON.
 
-Each line is one flat JSON object with the dataset's columns, e.g.
+A raw record is one flat dict with the dataset's columns, e.g.
 {"subject": ..., "body": ..., "queue": ..., "priority": ..., "type": ...,
  "language": "en", "tag_1": "Network", ..., "tag_8": null}
+JSONL files hold one such object per line; CSV files hold the same columns as a header row.
 """
 
 from __future__ import annotations
 
+import csv
 import json
-from collections.abc import Iterator
-from dataclasses import dataclass
+import re
+from collections.abc import Iterable, Iterator
+from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import TextIO
 
 REQUIRED_FIELDS = ("body", "queue", "priority", "type", "language")
-TAG_FIELDS = tuple(f"tag_{i}" for i in range(1, 9))
+_TAG_FIELD = re.compile(r"tag_(\d+)")
 
 
 @dataclass(frozen=True)
@@ -31,14 +35,18 @@ class Ticket:
 def parse_record(raw: dict) -> Ticket:
     """Turn one raw dataset row (a dict) into a Ticket.
 
-    - subject / answer may be null in the dataset -> stored as "".
-    - tag_1..tag_8 are collapsed into one tuple, skipping null/empty tags.
+    - Required fields must be present and non-empty (CSV gives "" for empty cells, JSON gives null).
+    - subject / answer may be null or "" -> stored as "".
+    - tag_1, tag_2, ... (any number) are collapsed into one tuple in order, skipping empty tags.
     """
-    missing = [name for name in REQUIRED_FIELDS if raw.get(name) is None]
+    missing = [name for name in REQUIRED_FIELDS if not raw.get(name)]
     if missing:
         raise ValueError(f"record is missing required field(s): {', '.join(missing)}")
 
-    tags = tuple(raw[name] for name in TAG_FIELDS if raw.get(name))
+    tag_names = sorted(
+        (name for name in raw if _TAG_FIELD.fullmatch(name)),
+        key=lambda name: int(name.split("_")[1]),
+    )
     return Ticket(
         subject=raw.get("subject") or "",
         body=raw["body"],
@@ -46,10 +54,26 @@ def parse_record(raw: dict) -> Ticket:
         priority=raw["priority"],
         type=raw["type"],
         language=raw["language"],
-        tags=tags,
+        tags=tuple(raw[name] for name in tag_names if raw[name]),
         answer=raw.get("answer") or "",
     )
 
+
+def select_tickets(
+    tickets: Iterable[Ticket], language: str | None, limit: int | None
+) -> list[Ticket]:
+    """Keep one language (if given) and stop after `limit` tickets (if given)."""
+    selected = []
+    for ticket in tickets:
+        if language is not None and ticket.language != language:
+            continue
+        selected.append(ticket)
+        if limit is not None and len(selected) >= limit:
+            break
+    return selected
+
+
+# ---------- JSON Lines ----------
 
 def iter_records(path: str | Path) -> Iterator[Ticket]:
     """Yield Tickets from a JSONL file one line at a time. Blank lines are skipped."""
@@ -58,23 +82,59 @@ def iter_records(path: str | Path) -> Iterator[Ticket]:
             if not line.strip():
                 continue
             try:
-                raw = json.loads(line)
-                yield parse_record(raw)
+                yield parse_record(json.loads(line))
             except (json.JSONDecodeError, ValueError) as e:
                 raise ValueError(f"{path}:{line_no}: {e}") from e
 
 
 def load_records(
-    path: str | Path,
-    language: str | None = None,
-    limit: int | None = None,
+    path: str | Path, language: str | None = None, limit: int | None = None
 ) -> list[Ticket]:
-    """Load Tickets into a list, optionally keeping one language and at most `limit` rows."""
-    tickets = []
-    for ticket in iter_records(path):
-        if language is not None and ticket.language != language:
-            continue
-        tickets.append(ticket)
-        if limit is not None and len(tickets) >= limit:
-            break
-    return tickets
+    """Load Tickets from a JSONL file."""
+    return select_tickets(iter_records(path), language, limit)
+
+
+# ---------- CSV ----------
+
+def iter_csv_records(f: TextIO, source: str = "<csv>") -> Iterator[Ticket]:
+    """Yield Tickets from an open CSV text stream with a header row.
+
+    Open files with newline="" so line breaks inside quoted fields are kept (csv module docs).
+    """
+    reader = csv.DictReader(f)
+    header = reader.fieldnames or []
+    missing = [name for name in REQUIRED_FIELDS if name not in header]
+    if missing:
+        raise ValueError(f"{source}: CSV header has no column(s) {missing}; found {header}")
+    for row in reader:
+        try:
+            yield parse_record(row)
+        except ValueError as e:
+            raise ValueError(f"{source}:{reader.line_num}: {e}") from e
+
+
+def load_csv_records(
+    path: str | Path, language: str | None = None, limit: int | None = None
+) -> list[Ticket]:
+    """Load Tickets from a CSV file."""
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        return select_tickets(iter_csv_records(f, str(path)), language, limit)
+
+
+# ---------- JSON ----------
+
+def save_json(tickets: Iterable[Ticket], path: str | Path) -> None:
+    """Save Tickets as one JSON array (tags become a list)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = [asdict(t) for t in tickets]
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+
+
+def load_json(path: str | Path) -> list[Ticket]:
+    """Load Tickets saved by save_json."""
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    return [Ticket(**{**item, "tags": tuple(item["tags"])}) for item in data]

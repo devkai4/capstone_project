@@ -12,7 +12,8 @@ Plain-Python helpers in `src/capstone_project/` (standard library only):
 
 | Module | Function | What it does |
 |---|---|---|
-| `records.py` | `load_records(path, language=None, limit=None)` | Load JSONL rows into `Ticket` objects (tags collected, nulls → `""`) |
+| `records.py` | `load_records(path, ...)`, `load_csv_records(path, ...)` | Load JSONL / CSV rows into `Ticket` objects (tags collected, nulls → `""`) |
+| `records.py` | `save_json(tickets, path)`, `load_json(path)` | Save / reload Tickets as one JSON array |
 | `labels.py` | `count_labels(tickets, field)`, `count_tags(tickets)` | `{label: count}` for queue / priority / type / language / tags, most common first |
 | `text.py` | `clean_text(text)`, `ticket_text(ticket)`, `tokenize(text)` | NFKC, drop invisible chars, collapse whitespace; subject + body; lowercase words |
 
@@ -20,4 +21,5 @@ Plain-Python helpers in `src/capstone_project/` (standard library only):
 uv run pytest                                # unit tests
 uv run python scripts/fetch_sample.py        # 20 real English tickets -> data/sample_20.jsonl
 uv run python scripts/week1_check.py         # run every helper on them (prints PASS/FAIL)
+uv run python scripts/day2_load_100.py      # Day 2: 100 English tickets from the CSV -> data/tickets_100.json
 ```
