@@ -1,0 +1,6 @@
+subject,body,answer,type,queue,priority,language,version,tag_1,tag_2,tag_3,tag_4,tag_5,tag_6,tag_7,tag_8,tag_9,tag_10
+VPN Access Issue,"We cannot connect, the VPN
+keeps dropping.",Restart the router.,Incident,Technical Support,high,en,51,Network,VPN,,,,,,,,
+,"Please send the ""March"" invoice.",,Request,Billing and Payments,low,en,51,Billing,,,,,,,,,
+Rechnung,Bitte senden Sie die Rechnung.,,Request,Billing and Payments,medium,de,51,Billing,,,,,,,,,
+Outage,Service is down.,,Incident,Technical Support,high,en,51,Outage,,,,,,,,,Urgent
