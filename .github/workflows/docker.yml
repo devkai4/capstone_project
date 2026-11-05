@@ -1,0 +1,37 @@
+# Day 5 gate evidence: build the image from a clean checkout, run the 10 ingest tests
+# inside the container, then ingest 100 tickets with `docker run`.
+name: docker
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-test-ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clean clone
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t capstone-ingest .
+
+      - name: 10 tests inside the container
+        run: docker run --rm capstone-ingest pytest -q tests/test_ingest.py
+
+      - name: Full test suite inside the container
+        run: docker run --rm capstone-ingest pytest -q
+
+      - name: Ingest 100 tickets
+        run: |
+          mkdir -p out && chmod 777 out   # the container runs as uid 10001
+          docker run --rm -v "$PWD/out:/out" capstone-ingest
+          python3 -c "import json; print(len(json.load(open('out/tickets_100.json'))), 'tickets in out/tickets_100.json')"
+
+      - name: Upload tickets_100.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: tickets_100
+          path: out/tickets_100.json

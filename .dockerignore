@@ -1,0 +1,13 @@
+# Keep the build context to what the image needs: pyproject.toml, uv.lock,
+# README.md (read by the build backend), src/, tests/, scripts/.
+.git
+.github
+.venv
+**/__pycache__
+**/*.py[oc]
+.pytest_cache
+.DS_Store
+*.patch
+data/
+out/
+exercises/
