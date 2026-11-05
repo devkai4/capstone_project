@@ -17,6 +17,10 @@ from openai import AsyncOpenAI, OpenAI
 
 DEFAULT_BASE_URL = "https://staging.datarobot.com/api/v2/genai/llmgw"
 DEFAULT_MODEL = "anthropic/claude-haiku-4-5-20251001"
+# The openai library waits up to 10 minutes by default; a stuck request should fail fast
+# instead (Week 2 Day 3: always set a timeout). Timeouts and 5xx are retried twice.
+DEFAULT_TIMEOUT = 60.0
+MAX_RETRIES = 2
 
 # Anthropic list prices in USD per 1M tokens (input, output). Used only for an estimate;
 # what the gateway meters internally may differ.
@@ -56,6 +60,8 @@ def make_client(
         api_key=api_key,
         base_url=base_url or os.environ.get("LLM_GATEWAY_BASE_URL", DEFAULT_BASE_URL),
         http_client=http_client,
+        timeout=DEFAULT_TIMEOUT,
+        max_retries=MAX_RETRIES,
     )
 
 
@@ -66,7 +72,8 @@ def make_async_client(
 ) -> AsyncOpenAI:
     """Same settings as make_client(), for asyncio code."""
     sync = make_client(api_key, base_url)  # reuses the env-var checks
-    return AsyncOpenAI(api_key=sync.api_key, base_url=sync.base_url, http_client=http_client)
+    return AsyncOpenAI(api_key=sync.api_key, base_url=sync.base_url, http_client=http_client,
+                       timeout=DEFAULT_TIMEOUT, max_retries=MAX_RETRIES)
 
 
 def complete(

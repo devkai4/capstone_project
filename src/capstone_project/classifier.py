@@ -140,7 +140,8 @@ async def classify(
     except ValidationError as e:
         first = e.errors()[0]
         error = f"{first['type']}: {first['msg']}"
-        logger.warning("parse failed (%s, finish=%s): %r", error, choice.finish_reason, raw[:80])
+        logger.warning("parse failed (%s, finish=%s), reply starts: %r",
+                       error, choice.finish_reason, raw[:80])
         return ClassifyResult(None, raw, error, **usage)
     return ClassifyResult(labels, raw, None, **usage)
 

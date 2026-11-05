@@ -64,3 +64,11 @@ def test_missing_token_gives_a_clear_error(monkeypatch):
     monkeypatch.delenv("DATAROBOT_API_TOKEN", raising=False)
     with pytest.raises(RuntimeError, match="DATAROBOT_API_TOKEN is not set"):
         make_client()
+
+
+def test_clients_fail_fast_instead_of_waiting_10_minutes():
+    from capstone_project.llm import DEFAULT_TIMEOUT, MAX_RETRIES, make_async_client
+
+    for client in (make_client(api_key="k"), make_async_client(api_key="k")):
+        assert client.timeout == DEFAULT_TIMEOUT == 60.0
+        assert client.max_retries == MAX_RETRIES == 2
