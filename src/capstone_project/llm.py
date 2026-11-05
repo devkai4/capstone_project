@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass
 
 import httpx
-from openai import OpenAI
+from openai import AsyncOpenAI, OpenAI
 
 DEFAULT_BASE_URL = "https://staging.datarobot.com/api/v2/genai/llmgw"
 DEFAULT_MODEL = "anthropic/claude-haiku-4-5-20251001"
@@ -57,6 +57,16 @@ def make_client(
         base_url=base_url or os.environ.get("LLM_GATEWAY_BASE_URL", DEFAULT_BASE_URL),
         http_client=http_client,
     )
+
+
+def make_async_client(
+    api_key: str | None = None,
+    base_url: str | None = None,
+    http_client: httpx.AsyncClient | None = None,
+) -> AsyncOpenAI:
+    """Same settings as make_client(), for asyncio code."""
+    sync = make_client(api_key, base_url)  # reuses the env-var checks
+    return AsyncOpenAI(api_key=sync.api_key, base_url=sync.base_url, http_client=http_client)
 
 
 def complete(
