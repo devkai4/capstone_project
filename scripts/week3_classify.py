@@ -1,10 +1,16 @@
-"""Week 3 Day 3: classify 50 tickets into JSON {queue, priority, type} validated with Pydantic.
+"""Week 3: classify the 50 eval tickets into JSON {queue, priority, type} validated with Pydantic.
 
-    uv run python scripts/week3_classify.py                 # tickets 0-49, structured outputs on
-    uv run python scripts/week3_classify.py --no-schema     # same prompt, no response_format (comparison)
+    # v1: static few-shot (5 examples inside the system prompt)
+    uv run python scripts/week3_classify.py
 
-Tickets 50-99 are kept out of the evaluation because the few-shot examples in
-prompts/classifier_v1.txt come from there. Per-ticket results go to logs/ (git-ignored).
+    # v2: dynamic few-shot, the 8 most similar labeled tickets from a pool (BM25)
+    uv run capstone-ingest -n 2100 --out data/pool_2100.json      # once
+    uv run python scripts/week3_classify.py --prompt prompts/classifier_v2.txt \
+        --pool data/pool_2100.json --k 8
+
+Eval set = tickets 0-49 of data/tickets_100.json. Tickets 50-99 hold the v1 examples.
+Every pool ticket whose body appears in tickets_100.json is removed (no leakage).
+Prints a markdown row for the README metrics table; per-ticket results go to logs/.
 """
 
 from __future__ import annotations
@@ -13,14 +19,15 @@ import argparse
 import asyncio
 import json
 import logging
-import statistics
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 from capstone_project.classifier import classify_many, load_prompt
+from capstone_project.evaluation import accuracy, percentile
 from capstone_project.llm import DEFAULT_MODEL, PRICE_PER_MTOK, make_async_client
 from capstone_project.records import load_json
+from capstone_project.retrieval import BM25Index, remove_overlap
 from capstone_project.text import clean_text
 
 
@@ -29,6 +36,8 @@ def main() -> int:
     parser.add_argument("--data", type=Path, default=Path("data/tickets_100.json"))
     parser.add_argument("-n", type=int, default=50, help="classify tickets 0..n-1 (default 50)")
     parser.add_argument("--prompt", type=Path, default=Path("prompts/classifier_v1.txt"))
+    parser.add_argument("--pool", type=Path, help="labeled tickets to retrieve examples from")
+    parser.add_argument("--k", type=int, default=8, help="examples per ticket with --pool")
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--no-schema", action="store_true", help="do not send response_format")
     parser.add_argument("--concurrency", type=int, default=5)
@@ -36,45 +45,53 @@ def main() -> int:
 
     logging.basicConfig(level=logging.WARNING, format="  log %(levelname)s %(message)s")
 
-    tickets = load_json(args.data)[: args.n]
+    all_100 = load_json(args.data)
+    tickets = all_100[: args.n]
     system = load_prompt(args.prompt)
 
     leaked = [i for i, t in enumerate(tickets) if clean_text(t.body) in system]
     if leaked:
-        print(f"ABORT: tickets {leaked} are also few-shot examples in {args.prompt}")
+        print(f"ABORT: eval tickets {leaked} also appear in {args.prompt}")
         return 1
 
+    examples_for = None
+    retrieval = "none"
+    if args.pool:
+        pool, dropped = remove_overlap(load_json(args.pool), all_100)
+        index = BM25Index(pool)
+        examples_for = lambda t: index.top_k(t, args.k)  # noqa: E731
+        retrieval = f"BM25 top-{args.k} of {len(pool)}"
+        print(f"pool: {len(pool)} tickets ({dropped} removed because they are in {args.data.name})")
+
     use_schema = not args.no_schema
-    print(f"Classifying {len(tickets)} tickets with {args.model} "
-          f"(prompt {args.prompt.name}, structured outputs {'on' if use_schema else 'off'})")
+    print(f"Classifying {len(tickets)} tickets with {args.model} (prompt {args.prompt.name}, "
+          f"examples: {retrieval}, structured outputs {'on' if use_schema else 'off'})")
     client = make_async_client()
     results = asyncio.run(classify_many(client, tickets, system, args.model, use_schema,
-                                        args.concurrency))
+                                        args.concurrency, examples_for=examples_for))
 
-    parsed = [r for r in results if r.labels is not None]
-    print(f"\nparsed into TicketLabels: {len(parsed)}/{len(results)}")
+    valid = sum(r.labels is not None for r in results)
+    print(f"\nvalid JSON parsed into TicketLabels: {valid}/{len(results)}")
     for i, r in enumerate(results):
         if r.labels is None:
             print(f"  #{i}: {r.error}  raw={r.raw[:60]!r}")
 
-    pairs = [(t, r.labels) for t, r in zip(tickets, results) if r.labels is not None]
-    if pairs:
-        print("\naccuracy on parsed outputs (labels in this dataset are noisy):")
-        for field in ("queue", "priority", "type"):
-            hits = sum(getattr(t, field) == getattr(lab, field) for t, lab in pairs)
-            print(f"  {field:<8} {hits}/{len(pairs)} = {hits / len(pairs):.0%}")
+    acc = accuracy(tickets, [r.labels for r in results])  # invalid output counts as wrong
+    print("\naccuracy (exact match vs dataset labels, invalid = wrong):")
+    for label in ("queue", "priority", "type", "mean"):
+        print(f"  {label:<8} {acc[label]:.0%}")
 
+    n = len(results)
     tokens_in = sum(r.input_tokens for r in results)
     tokens_out = sum(r.output_tokens for r in results)
-    latencies = sorted(r.seconds for r in results)
-    p95 = latencies[max(0, round(0.95 * len(latencies)) - 1)]
+    latencies = [r.seconds for r in results]
+    p50, p95 = percentile(latencies, 50), percentile(latencies, 95)
     price = PRICE_PER_MTOK.get(args.model)
-    cost = (tokens_in * price[0] + tokens_out * price[1]) / 1e6 if price else None
-    print(f"\ntokens: {tokens_in} in / {tokens_out} out "
-          f"(avg {tokens_in / len(results):.0f} / {tokens_out / len(results):.0f} per ticket)")
-    print(f"latency: median {statistics.median(latencies):.2f}s, p95 {p95:.2f}s")
+    cost = (tokens_in * price[0] + tokens_out * price[1]) / 1e6 / n if price else None
+    print(f"\ntokens per ticket: {tokens_in / n:.0f} in / {tokens_out / n:.0f} out")
+    print(f"latency: p50 {p50:.2f}s, p95 {p95:.2f}s")
     if cost is not None:
-        print(f"est. cost: ${cost:.4f} total, ${cost / len(results):.5f} per ticket (list price)")
+        print(f"cost per ticket: ${cost:.5f} (list price)")
 
     log = Path("logs") / f"classify_{datetime.now(timezone.utc):%Y%m%dT%H%M%S}.jsonl"
     log.parent.mkdir(exist_ok=True)
@@ -89,9 +106,13 @@ def main() -> int:
             }) + "\n")
     print(f"per-ticket results: {log}")
 
-    ok = len(parsed) == len(results)
-    print(f"\n{'PASS' if ok else 'FAIL'}: {len(parsed)}/{len(results)} outputs parse into the Pydantic model")
-    return 0 if ok else 1
+    model_short = args.model.split("/")[-1]
+    cost_cell = f"${cost:.5f}" if cost is not None else "n/a"
+    print("\nREADME metrics row:")
+    print(f"| {datetime.now():%Y-%m-%d} | {model_short} | {args.prompt.stem} | {retrieval} "
+          f"| {valid}/{n} | {acc['queue']:.0%} | {acc['priority']:.0%} | {acc['type']:.0%} "
+          f"| {acc['mean']:.0%} | {cost_cell} | {p50:.2f}s | {p95:.2f}s |")
+    return 0 if valid == n else 1
 
 
 if __name__ == "__main__":

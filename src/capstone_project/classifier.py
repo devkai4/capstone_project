@@ -10,8 +10,10 @@ The same Pydantic model is used twice:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -85,12 +87,30 @@ def load_prompt(path: str | Path) -> str:
     return Path(path).read_text(encoding="utf-8")
 
 
-def user_message(ticket: Ticket) -> str:
+def _ticket_block(ticket: Ticket) -> str:
     return (
         "<ticket>\n"
         f"<subject>{clean_text(ticket.subject)}</subject>\n"
         f"<body>{clean_text(ticket.body)}</body>\n"
         "</ticket>"
+    )
+
+
+def user_message(ticket: Ticket, examples: list[Ticket] | None = None) -> str:
+    """The ticket to classify, optionally preceded by labeled similar tickets (dynamic few-shot)."""
+    if not examples:
+        return _ticket_block(ticket)
+    blocks = [
+        f"<example>\n{_ticket_block(ex)}\n<answer>"
+        + json.dumps({"queue": ex.queue, "priority": ex.priority, "type": ex.type})
+        + "</answer>\n</example>"
+        for ex in examples
+    ]
+    return (
+        "Labeled examples of similar past tickets:\n<examples>\n"
+        + "\n".join(blocks)
+        + "\n</examples>\n\nClassify this ticket:\n"
+        + _ticket_block(ticket)
     )
 
 
@@ -112,6 +132,7 @@ async def classify(
     model: str = DEFAULT_MODEL,
     use_schema: bool = True,
     max_tokens: int = 100,
+    examples: list[Ticket] | None = None,
 ) -> ClassifyResult:
     """One ticket -> one ClassifyResult. Never raises for a bad reply; API errors still raise."""
     extra = {"response_format": response_format()} if use_schema else {}
@@ -120,7 +141,7 @@ async def classify(
         model=model,
         messages=[
             {"role": "system", "content": system},
-            {"role": "user", "content": user_message(ticket)},
+            {"role": "user", "content": user_message(ticket, examples)},
         ],
         max_tokens=max_tokens,
         temperature=0.0,
@@ -153,12 +174,17 @@ async def classify_many(
     model: str = DEFAULT_MODEL,
     use_schema: bool = True,
     concurrency: int = 5,
+    examples_for: Callable[[Ticket], list[Ticket]] | None = None,
 ) -> list[ClassifyResult]:
-    """Classify tickets concurrently (Week 2 Day 3 pattern), results in input order."""
+    """Classify tickets concurrently (Week 2 Day 3 pattern), results in input order.
+
+    examples_for(ticket) -> labeled tickets to show as examples (e.g. BM25 top-k); None = none.
+    """
     limit = asyncio.Semaphore(concurrency)
 
     async def one(ticket: Ticket) -> ClassifyResult:
         async with limit:
-            return await classify(client, ticket, system, model, use_schema)
+            examples = examples_for(ticket) if examples_for else None
+            return await classify(client, ticket, system, model, use_schema, examples=examples)
 
     return await asyncio.gather(*(one(t) for t in tickets))
