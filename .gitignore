@@ -9,3 +9,7 @@ wheels/
 # Virtual environments
 .venv
 .DS_Store
+
+# LLM call logs (may contain ticket text)
+logs/
+.env
