@@ -35,11 +35,12 @@ class Ticket:
 def parse_record(raw: dict) -> Ticket:
     """Turn one raw dataset row (a dict) into a Ticket.
 
-    - Required fields must be present and non-empty (CSV gives "" for empty cells, JSON gives null).
+    - Required fields must be present and not blank: CSV gives "" for empty cells,
+      JSON gives null, and "   " (whitespace only) is treated as blank too.
     - subject / answer may be null or "" -> stored as "".
     - tag_1, tag_2, ... (any number) are collapsed into one tuple in order, skipping empty tags.
     """
-    missing = [name for name in REQUIRED_FIELDS if not raw.get(name)]
+    missing = [name for name in REQUIRED_FIELDS if not str(raw.get(name) or "").strip()]
     if missing:
         raise ValueError(f"record is missing required field(s): {', '.join(missing)}")
 
