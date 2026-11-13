@@ -37,16 +37,33 @@ workflow repeats all three steps on every push to main and every pull request.
 
 ## Metrics (Week 3: classifier on 50 labeled tickets)
 
-Eval set: tickets 0-49 of `data/tickets_100.json`, exact match against the dataset labels.
-Gate: 50/50 valid JSON, label accuracy >= 70%, cost per ticket and p50/p95 latency recorded.
-Cost is estimated from Anthropic list prices; latency is per request through the staging LLM gateway.
+Capstone Option A: **accuracy = the queue label matches the dataset label.** priority and type
+are recorded for reference only.
+Week 3 gate: 50/50 valid JSON, queue accuracy >= 70%, cost per ticket and p50/p95 latency in this README.
 
-| date | model | prompt | examples | valid JSON | queue | priority | type | mean | cost / ticket | p50 | p95 |
+Tuning set: tickets 0-49 of `data/tickets_100.json` (all prompt / k / pool choices were made here).
+Held-out check: tickets 50-99, used once for the final configuration (v1 took its 5 static
+examples from there, so v1 is not run on it). Cost is estimated from Anthropic list prices;
+latency is per request through the staging LLM gateway.
+
+| date | eval | model | prompt | examples | valid JSON | **queue** | priority | type | cost / ticket | p50 | p95 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 2026-11-05 | claude-haiku-4-5-20251001 | classifier_v1 | 5 static | 50/50 | 32% | 54% | 76% | 54% | $0.00173 | 1.20s | 3.17s |
-| 2026-11-13 | claude-haiku-4-5-20251001 | classifier_v2 | BM25 top-8 of 2000 | 50/50 | 52% | 64% | 78% | 65% | $0.00225 | 0.83s | 1.92s |
+| 2026-11-05 | tickets 0-49 | claude-haiku-4-5-20251001 | classifier_v1 | 5 static | 50/50 | **32%** | 54% | 76% | $0.00173 | 1.20s | 3.17s |
+| 2026-11-13 | tickets 0-49 | claude-haiku-4-5-20251001 | classifier_v2 | BM25 top-8 of 2000 | 50/50 | **52%** | 64% | 78% | $0.00225 | 0.83s | 1.92s |
+| 2026-11-13 | tickets 0-49 | claude-haiku-4-5-20251001 | classifier_v3 | BM25 top-3 of 2000, ranked+overlap | 50/50 | **62%** | 64% | 82% | $0.00158 | 0.80s | 1.67s |
+| 2026-11-13 | tickets 0-49 | claude-haiku-4-5-20251001 | classifier_v3 | BM25 top-8 of 2000, ranked+overlap | 50/50 | **66%** | 70% | 82% | $0.00244 | 0.83s | 1.52s |
+| 2026-11-13 | tickets 0-49 | claude-haiku-4-5-20251001 | classifier_v3 | BM25 top-8 of 10000, ranked+overlap | 50/50 | **66%** | 74% | 84% | $0.00242 | 0.77s | 1.66s |
 
 `scripts/week3_classify.py` prints the next row ready to paste.
+
+**Week 3 gate: not passed yet** (best queue accuracy 66% = 33/50; 70% = 35/50). A 5x larger
+pool (10000) did not move it. Cost ($0.00242 per ticket) and latency (p50 0.77s, p95 1.66s) are well inside the SPEC
+limits (<= $0.01, p95 <= 8s).
+
+What moved queue accuracy from 52% (v2) to 66% (v3) was not more examples but telling the
+model each example's rank and word overlap, and to copy a clear rank-1 match.
+Caveats: 50 tickets, so one ticket = 2 points. The retrieval pool likely contains other
+versions of the eval tickets (see below), so accuracy on genuinely new tickets will be lower.
 
 ### Label-noise check (non-LLM baselines, `scripts/week3_baseline.py`)
 
