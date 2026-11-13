@@ -61,3 +61,31 @@ def test_accuracy_per_label_and_mean():
 @pytest.mark.parametrize(("q", "expected"), [(50, 3.0), (95, 5.0), (100, 5.0)])
 def test_percentile_nearest_rank(q, expected):
     assert percentile([5.0, 1.0, 3.0, 2.0, 4.0], q) == expected
+
+
+# ---------- v3: ranked examples with word overlap ----------
+
+def test_word_overlap_is_jaccard_of_word_sets():
+    from capstone_project.retrieval import word_overlap
+
+    a = t("x", "vpn router drops")
+    assert word_overlap(a, a) == 1.0
+    # 1-letter words are ignored: {vpn, router} shared / {vpn, router, drops, works}
+    assert word_overlap(a, t("x", "vpn router works")) == pytest.approx(2 / 4)
+
+
+def test_ranked_examples_keep_bm25_order_and_number_from_one():
+    from capstone_project.retrieval import ranked_examples
+
+    query = t("VPN problem", "The VPN on our router disconnects again and again.")
+    examples = ranked_examples(BM25Index(POOL), query, 2)
+    assert [e.rank for e in examples] == [1, 2]
+    assert examples[0].ticket.subject == "VPN keeps dropping"
+    assert examples[0].overlap > examples[1].overlap
+
+
+def test_user_message_tags_ranked_examples():
+    from capstone_project.retrieval import Example
+
+    msg = user_message(POOL[2], examples=[Example(POOL[0], 1, 0.83)])
+    assert '<example rank="1" overlap="0.83">' in msg

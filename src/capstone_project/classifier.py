@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 from capstone_project.llm import DEFAULT_MODEL
 from capstone_project.records import Ticket
+from capstone_project.retrieval import Example
 from capstone_project.text import clean_text
 
 logger = logging.getLogger(__name__)
@@ -96,16 +97,26 @@ def _ticket_block(ticket: Ticket) -> str:
     )
 
 
-def user_message(ticket: Ticket, examples: list[Ticket] | None = None) -> str:
-    """The ticket to classify, optionally preceded by labeled similar tickets (dynamic few-shot)."""
+def user_message(ticket: Ticket, examples: list | None = None) -> str:
+    """The ticket to classify, optionally preceded by labeled similar tickets (dynamic few-shot).
+
+    examples: Tickets (v2: no extra info) or retrieval.Example objects (v3: each example tag
+    carries its similarity rank and word overlap with the new ticket).
+    """
     if not examples:
         return _ticket_block(ticket)
-    blocks = [
-        f"<example>\n{_ticket_block(ex)}\n<answer>"
-        + json.dumps({"queue": ex.queue, "priority": ex.priority, "type": ex.type})
-        + "</answer>\n</example>"
-        for ex in examples
-    ]
+    blocks = []
+    for ex in examples:
+        if isinstance(ex, Example):
+            tag = f'<example rank="{ex.rank}" overlap="{ex.overlap:.2f}">'
+            ex = ex.ticket
+        else:
+            tag = "<example>"
+        blocks.append(
+            f"{tag}\n{_ticket_block(ex)}\n<answer>"
+            + json.dumps({"queue": ex.queue, "priority": ex.priority, "type": ex.type})
+            + "</answer>\n</example>"
+        )
     return (
         "Labeled examples of similar past tickets:\n<examples>\n"
         + "\n".join(blocks)
@@ -132,7 +143,7 @@ async def classify(
     model: str = DEFAULT_MODEL,
     use_schema: bool = True,
     max_tokens: int = 100,
-    examples: list[Ticket] | None = None,
+    examples: list | None = None,
 ) -> ClassifyResult:
     """One ticket -> one ClassifyResult. Never raises for a bad reply; API errors still raise."""
     extra = {"response_format": response_format()} if use_schema else {}
@@ -174,7 +185,7 @@ async def classify_many(
     model: str = DEFAULT_MODEL,
     use_schema: bool = True,
     concurrency: int = 5,
-    examples_for: Callable[[Ticket], list[Ticket]] | None = None,
+    examples_for: Callable[[Ticket], list] | None = None,
 ) -> list[ClassifyResult]:
     """Classify tickets concurrently (Week 2 Day 3 pattern), results in input order.
 

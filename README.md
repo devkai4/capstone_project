@@ -44,6 +44,7 @@ Cost is estimated from Anthropic list prices; latency is per request through the
 | date | model | prompt | examples | valid JSON | queue | priority | type | mean | cost / ticket | p50 | p95 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 2026-11-05 | claude-haiku-4-5-20251001 | classifier_v1 | 5 static | 50/50 | 32% | 54% | 76% | 54% | $0.00173 | 1.20s | 3.17s |
+| 2026-11-13 | claude-haiku-4-5-20251001 | classifier_v2 | BM25 top-8 of 2000 | 50/50 | 52% | 64% | 78% | 65% | $0.00225 | 0.83s | 1.92s |
 
 `scripts/week3_classify.py` prints the next row ready to paste.
 
@@ -53,10 +54,17 @@ How predictable the labels are from the text alone, on the same 50 tickets:
 
 | method | queue | priority | type | mean |
 |---|---|---|---|---|
-| majority class | | | | |
-| BM25 k-NN (k=5) | | | | |
-| TF-IDF + logistic regression | | | | |
-| TF-IDF + logistic regression, 5-fold CV on the pool | | | | |
+| majority class | 34% | 50% | 38% | 41% |
+| BM25 k-NN, k=1 (copy the closest ticket) | 62% | 70% | 82% | 71% |
+| BM25 k-NN, k=5 (vote) | 44% | 50% | 78% | 57% |
+| BM25 k-NN, k=10 (vote) | 46% | 64% | 74% | 61% |
+| TF-IDF + logistic regression | 58% | 72% | 84% | 71% |
+| TF-IDF + logistic regression, 5-fold CV on the 2000-ticket pool | 50% | 54% | 80% | 61% |
+
+Pool: first 2100 English tickets of the CSV minus the 100 in `tickets_100.json` (2000 left).
+k=1 beating k=5/k=10 suggests the pool holds near-duplicate versions of the eval tickets
+(the CSV is a "version" dataset): the single closest ticket carries the label, extra
+neighbours mostly add noise. This makes retrieval-based scores optimistic for truly new tickets.
 
 Observed in the eval set: near-identical connectivity tickets are labeled Technical Support (#20),
 IT Support (#19, #45), Product Support (#7, #49) and Customer Service (#26); some labels do not

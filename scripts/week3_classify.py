@@ -8,6 +8,10 @@
     uv run python scripts/week3_classify.py --prompt prompts/classifier_v2.txt \
         --pool data/pool_2100.json --k 8
 
+    # v3: same, but each example shows its rank and word overlap with the ticket
+    uv run python scripts/week3_classify.py --prompt prompts/classifier_v3.txt \
+        --pool data/pool_2100.json --k 3 --show-similarity
+
 Eval set = tickets 0-49 of data/tickets_100.json. Tickets 50-99 hold the v1 examples.
 Every pool ticket whose body appears in tickets_100.json is removed (no leakage).
 Prints a markdown row for the README metrics table; per-ticket results go to logs/.
@@ -27,7 +31,7 @@ from capstone_project.classifier import classify_many, load_prompt
 from capstone_project.evaluation import accuracy, percentile
 from capstone_project.llm import DEFAULT_MODEL, PRICE_PER_MTOK, make_async_client
 from capstone_project.records import load_json
-from capstone_project.retrieval import BM25Index, remove_overlap
+from capstone_project.retrieval import BM25Index, ranked_examples, remove_overlap
 from capstone_project.text import clean_text
 
 
@@ -38,6 +42,8 @@ def main() -> int:
     parser.add_argument("--prompt", type=Path, default=Path("prompts/classifier_v1.txt"))
     parser.add_argument("--pool", type=Path, help="labeled tickets to retrieve examples from")
     parser.add_argument("--k", type=int, default=8, help="examples per ticket with --pool")
+    parser.add_argument("--show-similarity", action="store_true",
+                        help="tag each example with its rank and word overlap (use with prompt v3)")
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--no-schema", action="store_true", help="do not send response_format")
     parser.add_argument("--concurrency", type=int, default=5)
@@ -59,8 +65,12 @@ def main() -> int:
     if args.pool:
         pool, dropped = remove_overlap(load_json(args.pool), all_100)
         index = BM25Index(pool)
-        examples_for = lambda t: index.top_k(t, args.k)  # noqa: E731
-        retrieval = f"BM25 top-{args.k} of {len(pool)}"
+        if args.show_similarity:
+            examples_for = lambda t: ranked_examples(index, t, args.k)  # noqa: E731
+            retrieval = f"BM25 top-{args.k} of {len(pool)}, ranked+overlap"
+        else:
+            examples_for = lambda t: index.top_k(t, args.k)  # noqa: E731
+            retrieval = f"BM25 top-{args.k} of {len(pool)}"
         print(f"pool: {len(pool)} tickets ({dropped} removed because they are in {args.data.name})")
 
     use_schema = not args.no_schema

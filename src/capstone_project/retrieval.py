@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter
+from dataclasses import dataclass
 
 from capstone_project.records import Ticket
 from capstone_project.text import clean_text, ticket_text, tokenize
@@ -58,6 +59,26 @@ class BM25Index:
             if len(hits) == k:
                 break
         return hits
+
+
+@dataclass(frozen=True)
+class Example:
+    """A retrieved ticket with its rank (1 = most similar) and word overlap with the query."""
+    ticket: Ticket
+    rank: int
+    overlap: float  # Jaccard overlap of the two tickets' word sets, 0..1
+
+
+def word_overlap(a: Ticket, b: Ticket) -> float:
+    """Shared distinct words / all distinct words (Jaccard). ~1.0 = near-duplicate wording."""
+    x, y = set(_terms(a)), set(_terms(b))
+    return len(x & y) / len(x | y) if x | y else 0.0
+
+
+def ranked_examples(index: "BM25Index", query: Ticket, k: int) -> list[Example]:
+    """BM25 top-k, annotated with rank and word overlap so the model can tell how close each is."""
+    return [Example(t, rank, round(word_overlap(query, t), 2))
+            for rank, t in enumerate(index.top_k(query, k), start=1)]
 
 
 def remove_overlap(pool: list[Ticket], held_out: list[Ticket]) -> tuple[list[Ticket], int]:
