@@ -81,6 +81,17 @@ def ranked_examples(index: "BM25Index", query: Ticket, k: int) -> list[Example]:
             for rank, t in enumerate(index.top_k(query, k), start=1)]
 
 
+def near_duplicate_queue(examples: list[Example], threshold: float) -> str | None:
+    """The rank-1 example's queue if its word overlap with the ticket is >= threshold, else None.
+
+    A rank-1 example with very high overlap is almost certainly another version of the same
+    ticket, so its label is more reliable than any judgment call (code decides, not the LLM).
+    """
+    if examples and examples[0].rank == 1 and examples[0].overlap >= threshold:
+        return examples[0].ticket.queue
+    return None
+
+
 def remove_overlap(pool: list[Ticket], held_out: list[Ticket]) -> tuple[list[Ticket], int]:
     """Drop pool tickets whose body also appears in the held-out tickets (eval set, static examples)."""
     banned = {clean_text(t.body) for t in held_out}

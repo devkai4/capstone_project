@@ -24,6 +24,7 @@ import asyncio
 import json
 import logging
 import sys
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -31,7 +32,12 @@ from capstone_project.classifier import classify_many, load_prompt
 from capstone_project.evaluation import accuracy, percentile
 from capstone_project.llm import DEFAULT_MODEL, PRICE_PER_MTOK, make_async_client
 from capstone_project.records import load_json
-from capstone_project.retrieval import BM25Index, ranked_examples, remove_overlap
+from capstone_project.retrieval import (
+    BM25Index,
+    near_duplicate_queue,
+    ranked_examples,
+    remove_overlap,
+)
 from capstone_project.text import clean_text
 
 
@@ -44,6 +50,9 @@ def main() -> int:
     parser.add_argument("--prompt", type=Path, default=Path("prompts/classifier_v1.txt"))
     parser.add_argument("--pool", type=Path, help="labeled tickets to retrieve examples from")
     parser.add_argument("--k", type=int, default=8, help="examples per ticket with --pool")
+    parser.add_argument("--copy-threshold", type=float,
+                        help="if the rank-1 example's word overlap is >= this, use its queue "
+                             "instead of the model's (needs --pool)")
     parser.add_argument("--show-similarity", action="store_true",
                         help="tag each example with its rank and word overlap (use with prompt v3)")
     parser.add_argument("--model", default=DEFAULT_MODEL)
@@ -83,7 +92,20 @@ def main() -> int:
     results = asyncio.run(classify_many(client, tickets, system, args.model, use_schema,
                                         args.concurrency, examples_for=examples_for))
 
-    valid = sum(r.labels is not None for r in results)
+    valid = sum(r.labels is not None for r in results)  # counted on the model's own output
+
+    if args.copy_threshold is not None:
+        if not args.pool:
+            print("ABORT: --copy-threshold needs --pool")
+            return 1
+        copied = 0
+        for i, (t, r) in enumerate(zip(tickets, results)):
+            queue = near_duplicate_queue(ranked_examples(index, t, 1), args.copy_threshold)
+            if queue and r.labels is not None and queue != r.labels.queue:
+                results[i] = replace(r, labels=r.labels.model_copy(update={"queue": queue}))
+                copied += 1
+        retrieval += f", copy rank-1 queue if overlap >= {args.copy_threshold}"
+        print(f"near-duplicate rule changed the queue of {copied} tickets")
     print(f"\nvalid JSON parsed into TicketLabels: {valid}/{len(results)}")
     for i, r in enumerate(results):
         if r.labels is None:

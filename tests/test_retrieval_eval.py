@@ -89,3 +89,18 @@ def test_user_message_tags_ranked_examples():
 
     msg = user_message(POOL[2], examples=[Example(POOL[0], 1, 0.83)])
     assert '<example rank="1" overlap="0.83">' in msg
+
+
+# ---------- near-duplicate rule ----------
+
+@pytest.mark.parametrize(("overlap", "expected"), [(0.65, "IT Support"), (0.40, None)])
+def test_near_duplicate_queue(overlap, expected):
+    from capstone_project.retrieval import Example, near_duplicate_queue
+
+    assert near_duplicate_queue([Example(POOL[0], 1, overlap)], threshold=0.5) == expected
+
+
+def test_near_duplicate_queue_needs_examples():
+    from capstone_project.retrieval import near_duplicate_queue
+
+    assert near_duplicate_queue([], threshold=0.5) is None
