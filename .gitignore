@@ -13,3 +13,6 @@ wheels/
 # LLM call logs (may contain ticket text)
 logs/
 .env
+
+# Retrieval pool (regenerate with: uv run capstone-ingest -n 2100 --out data/pool_2100.json)
+data/pool_*.json
