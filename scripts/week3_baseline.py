@@ -97,13 +97,14 @@ def main() -> int:
     parser.add_argument("--data", type=Path, default=Path("data/tickets_100.json"))
     parser.add_argument("--pool", type=Path, required=True)
     parser.add_argument("-n", type=int, default=50)
+    parser.add_argument("--start", type=int, default=0, help="first eval ticket (50 = held-out set)")
     args = parser.parse_args()
 
     all_100 = load_json(args.data)
-    tickets = all_100[: args.n]
+    tickets = all_100[args.start: args.start + args.n]
     pool, dropped = remove_overlap(load_json(args.pool), all_100)
     print(f"pool: {len(pool)} tickets ({dropped} removed because they are in {args.data.name}); "
-          f"eval: tickets 0-{args.n - 1}")
+          f"eval: tickets {args.start}-{args.start + len(tickets) - 1}")
     print("pool queue distribution:", dict(Counter(t.queue for t in pool).most_common()))
 
     header = "| method                 | queue | prio  | type  | mean  |\n|---|---|---|---|---|"
